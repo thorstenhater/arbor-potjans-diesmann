@@ -132,6 +132,7 @@ class recipe(A.recipe):
         self.n23e, self.n23i, self.n4e, self.n4i, self.n5e, self.n5i, self.n6e, self.n6i = n23e, n23i, n4e, n4i, n5e, n5i, n6e, n6i,
         self.sizes = np.array([n23e, n23i, n4e, n4i, n5e, n5i, n6e, n6i])
         self.offset = np.cumsum(self.sizes)
+        self.offset = np.insert(self.offset, 0, 0)
         self.N = np.sum(self.sizes)
         # [tgt][src]
         self.connection_probability = np.array([[0.1009, 0.1689, 0.0437, 0.0818, 0.0323, 0.,     0.0076, 0.],
@@ -145,11 +146,11 @@ class recipe(A.recipe):
         self.mean_delay_exc    =  1.5
         self.mean_delay_inh    =  0.75
         self.stddev_delay_exc  =  0.1  # ??
-        self.stddev_delay_inh  = -0.4  # ??
+        self.stddev_delay_inh  =  0.4  # ??
         self.mean_weight_exc   =  1.5  # ??
         self.mean_weight_inh   =  0.75 # ??
         self.stddev_weight_exc =  0.1
-        self.stddev_weight_inh = -0.4
+        self.stddev_weight_inh =  0.4
 
 
     def gid_to_pop(self, gid):
@@ -169,7 +170,9 @@ class recipe(A.recipe):
             return I6E
         elif gid >= self.offset[I6I]:
             return I6I
-        else:
+        elif gid >= self.N:
+            raise RuntimeError(f"GID {gid} out-of-bounds.")
+        raise RuntimeError("Never!")
 
     def num_cells(self):
         return self.N
