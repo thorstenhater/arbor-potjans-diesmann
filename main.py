@@ -143,7 +143,7 @@ class recipe(A.recipe):
         n4e, n4i = l4
         n5e, n5i = l5
         n6e, n6i = l6
-        self.sizes = np.array([n23e, n23i, n4e, n4i, n5e, n5i, n6e, n6i])
+        self.size = np.array([n23e, n23i, n4e, n4i, n5e, n5i, n6e, n6i])
         # Offset of population I into the gids **AND** one past last pop
         self.offset = np.cumsum(np.insert(self.size, 0, 0))
         # total size
@@ -220,15 +220,14 @@ class recipe(A.recipe):
     def connections_on(self, tgt):
         res = []
         tgt_pop = self.gid_to_pop(tgt)
-
         # Scan all Population types
         for src_pop in POPS:
             p = self.connection_probability[tgt_pop][src_pop]
-            n_src = self.sizes[src_pop]
+            n_src = self.size[src_pop]
             # Generate list of connection srcs
-            srcs = np.where(rd.random(n_src) < p)
+            srcs = np.argwhere(rd.random(n_src) < p)
             # Now reify all those into connection objects
-            # NOTE: We are simpliy skipping self connections here, but maybe
+            # NOTE: We are simply skipping self connections here, but maybe
             # we need to re-draw those?
             for src in srcs:
                 if src == tgt:
@@ -237,6 +236,15 @@ class recipe(A.recipe):
                 res.append(A.connection((src, "detector"), "synapse", w, d))
         return res
 
-rec = recipe(4, 4, 4, 4, 4, 4, 4, 4)
+rec = recipe(l23=(4, 4),
+             l4=(4, 4),
+             l5=(4, 4),
+             l6=(4, 4))
+
 sim = A.simulation(rec)
+sim.record(A.spike_recording.all)
+
 sim.run(100, 0.05)
+
+for spike in sim.spikes():
+    print(spike)
