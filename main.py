@@ -4,6 +4,10 @@ from collections import defaultdict
 import numpy as np
 import numpy.random as rd
 import arbor as A
+from time import perf_counter as pc
+
+dt = 0.05 # ms
+T = 100 # ms
 
 def make_l23i():
         tree = A.segment_tree()
@@ -190,6 +194,11 @@ class recipe(A.recipe):
         else:
             w = rd.normal(self.mean_weight_inh, self.stddev_weight_inh)
             d = rd.normal(self.mean_delay_inh, self.stddev_delay_inh)
+        # NOTE: There's a bug on clang (at least on MacOS) that results in
+        # broken simulations if d < dt, so fix it here
+        if d < dt:
+            d = dt
+            print(f"WARNING: Connection {src} -> {tgt} has delay less than dt={dt}, using dt instead.")
         return w, d
 
     def gid_to_pop(self, gid):
@@ -272,7 +281,13 @@ for lbl, src in zip(lbls, POPS):
         print(f"{rec.connections[(src, tgt)]:>10d}", end=' | ')
     print()
 
+sim.progress_banner()
+
+print(f"Running simulation for {T}ms at dt={dt}ms")
+t0 = pc()
 sim.run(100, 0.05)
+t1 = pc()
+print(f"Took {t1 - t0:0.3f}s.")
 
 for spike in sim.spikes():
     print(spike)
