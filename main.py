@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+from collections import defaultdict
 import numpy as np
 import numpy.random as rd
 import arbor as A
@@ -125,7 +126,6 @@ def make_l6e():
 
 POPS = range(8)
 I23E, I23I, I4E, I4I, I5E, I5I, I6E, I6I, = POPS
-
 CELLS = [make_l23e,
          make_l23i,
          make_l4e,
@@ -169,6 +169,15 @@ class recipe(A.recipe):
         self.mean_weight_inh   =  -4*self.mean_weight_exc
         self.stddev_weight_exc =  0.1*self.mean_weight_exc
         self.stddev_weight_inh =  0.4*self.mean_weight_exc
+        # Record synapse counts for reporting. We'd expect p_s_t*n_s*n_t on
+        # average for source and target populations.
+        #
+        # NOTE: We could also pregenerate all connections here, but that seems
+        # problematic in the of a target of 300M synapses.
+        #
+        # NOTE: This will also fall flat when multi-threading and/or MPI is
+        # used.
+        self.connections = defaultdict(lambda: 0)
 
     def make_connection(self, src, tgt):
         # NOTE: The mean weight of the connection from L4E to L23E is doubled
@@ -222,6 +231,7 @@ class recipe(A.recipe):
         tgt_pop = self.gid_to_pop(tgt)
         # Scan all Population types
         for src_pop in POPS:
+            n = 0
             p = self.connection_probability[tgt_pop][src_pop]
             n_src = self.size[src_pop]
             # Generate list of connection srcs
@@ -234,6 +244,8 @@ class recipe(A.recipe):
                     continue
                 w, d = self.make_connection(src_pop, tgt_pop)
                 res.append(A.connection((src, "detector"), "synapse", w, d))
+                n += 1
+            self.connections[(src_pop, tgt_pop)] += n
         return res
 
 rec = recipe(l23=(4, 4),
@@ -243,6 +255,22 @@ rec = recipe(l23=(4, 4),
 
 sim = A.simulation(rec)
 sim.record(A.spike_recording.all)
+
+# Setup done, print out our connection table
+lbls = [f"L-{l}_{t}" for l in [23, 4, 5, 6,] for t in "ei"]
+print("|       ", end=' | ')
+for lbl in lbls:
+    print(f"{lbl:>10}", end=' | ')
+print()
+print("+-------", end='-+-')
+for lbl in lbls:
+    print('-'*10, end='-+-')
+print()
+for lbl, src in zip(lbls, POPS):
+    print(f"| {lbl:>6}", end=' | ')
+    for tgt in POPS:
+        print(f"{rec.connections[(src, tgt)]:>10d}", end=' | ')
+    print()
 
 sim.run(100, 0.05)
 
