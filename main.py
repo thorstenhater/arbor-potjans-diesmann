@@ -11,18 +11,28 @@ T = 100  # ms
 
 
 def make_iaf():
-    pass
-
+    return A.lif_cell(source="source",
+                      target="synapse",
+                      tau_m=10,
+                      t_ref=2,
+                      C_m=250,
+                      E_L=-65, # TODO
+                      V_m=-65, # TODO
+                      E_R=-65,)
 
 def make_hh():
+    # TODO figure out HH parameters
+    # TODO figure out cell geometry
     tree = A.segment_tree()
     tree.append(A.mnpos, A.mpoint(-3, 0, 0, 3), A.mpoint(3, 0, 0, 3), tag=1)
+    center = "(location 0 0.5)"
+    soma = "(tag 1)"
     decor = (
         A.decor()
-        .set_property(Vm=-40)
-        .paint("(tag 1)", A.density("hh"))
-        .place("(location 0 0.5)", A.threshold_detector(-10), "source")
-        .place("(location 0 0.75)", A.synapse("expsyn"), "synapse")
+        .set_property(Vm=-65)
+        .paint(soma, A.density("hh"))
+        .place(center, A.threshold_detector(-50), "source")
+        .place(center, A.synapse("expsyn", {"tau": 0.5, "e": -65}), "synapse")
     )
     return A.cable_cell(tree, decor)
 
@@ -139,11 +149,11 @@ class recipe(A.recipe):
         self.stddev_weight_inh = 0.4 * self.mean_weight_exc
         # Background
         self.f_background = 8e-3
-        self.weight_background = 500  # TODO
+        self.weight_background = 500  # TODO what is the correct input? Purely guessed...
         # Thalamic inputs
         self.f_thalamic = 15e-3
-        self.weight_thalamic = 500  # TODO
-        self.delay_thalamic = 1.5  # TODO
+        self.weight_thalamic = 500  # TODO what is the correct input? Purely guessed...
+        self.delay_thalamic = 1.5  # TODO what is the correct input? Purely guessed...
         # Record synapse counts for reporting. We'd expect p_s_t*n_s*n_t on
         # average for source and target populations.
         #
@@ -237,7 +247,7 @@ class recipe(A.recipe):
                 A.event_generator(
                     "synapse",
                     self.weight_background,
-                    A.poisson_schedule(tstart=0, f=self.f_thalamic),
+                    A.poisson_schedule(tstart=0.0, freq=self.f_thalamic),
                 )
             ]
 
@@ -285,6 +295,7 @@ for lbl, src in zip(lbls, POPS):
     for tgt in POPS:
         print(f"{rec.connections[(src, tgt)]:>6d}", end=" | ")
     print()
+print()
 print("-" * 80)
 print()
 print(f"Running simulation for {T}ms at dt={dt}ms")
@@ -294,6 +305,10 @@ t1 = pc()
 print(f"Done, took {t1 - t0:0.3f}s.")
 print()
 print("-" * 80)
+print()
 print("Spikes")
-for spike in sim.spikes():
-    print(spike)
+print()
+print("| Time     | GID    | LID |")
+print("|----------+--------+-----+")
+for (gid, lid), t in sim.spikes():
+    print(f"| {t:8.3f} | {gid:>6d} | {lid:>3d} |")
