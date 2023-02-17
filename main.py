@@ -2,6 +2,7 @@
 
 from collections import defaultdict
 import numpy as np
+import pandas as pd
 import numpy.random as rd
 import arbor as A
 from time import perf_counter as pc
@@ -10,6 +11,12 @@ from logging import warning
 dt = 0.05  # ms
 T = 100  # ms
 VERBOSE = False
+
+
+def banner():
+    print()
+    print('-'*80)
+    print()
 
 
 def make_iaf():
@@ -42,7 +49,7 @@ def make_hh():
     return A.cable_cell(tree, decor)
 
 
-def make_spike_source(*, tstart=0, tend=15, f=0.15):
+def make_spike_source(*, tstart=0, tend=15, f=0.15): # ms, ms, kHz
     return A.spike_source_cell("source", A.poisson_schedule(tstart, f, tend))
 
 
@@ -81,6 +88,17 @@ CELLS = [
     make_th,
 ]
 
+LABELS = [
+    f"{l}-{t}"
+    for l in [
+        23,
+        4,
+        5,
+        6,
+    ]
+    for t in "ei"
+] + ["th"]
+
 
 class recipe(A.recipe):
     def __init__(
@@ -100,7 +118,6 @@ class recipe(A.recipe):
         n5e, n5i = l5
         n6e, n6i = l6
         size = [n23e, n23i, n4e, n4i, n5e, n5i, n6e, n6i, nth]
-        self.scale = scale
         self.size = np.array([int(n * scale) for n in size])
         # Offset of population I into the gids **AND** one past last pop
         self.offset = np.cumsum(np.insert(self.size, 0, 0))
@@ -153,7 +170,10 @@ class recipe(A.recipe):
         self.stddev_weight_exc = 0.1 * self.mean_weight_exc
         self.stddev_weight_inh = 0.4 * self.mean_weight_exc
         # Background
-        self.f_background = 8e-3
+        self.f_background = 8e-3 # kHz
+        # Indegree of background connection, used as a scale for the frequency here
+        # TODO test/check if this holds water
+        self.k_background = np.array([1600, 1500, 2100, 1900, 2000, 1900, 2900, 2100, 0])
         self.weight_background = (
             500  # TODO what is the correct input? Purely guessed...
         )
@@ -169,7 +189,7 @@ class recipe(A.recipe):
         #
         # NOTE: This will also fall flat when multi-threading and/or MPI is
         # used.
-        self.connections = defaultdict(lambda: 0)
+        self.connections = defaultdict(lambda: np.zeros_like(POPS))
 
     def make_connection(self, src, tgt):
         # NOTE: The mean weight of the connection from L4E to L23E is doubled
@@ -186,7 +206,8 @@ class recipe(A.recipe):
             w = rd.normal(self.mean_weight_inh, self.stddev_weight_inh)
             d = rd.normal(self.mean_delay_inh, self.stddev_delay_inh)
         # NOTE: There's a bug on clang (at least on MacOS) that results in
-        # broken simulations if d < dt, so fix it here
+        # broken simulations if d < dt, so fix it here. Usually Arbor should do
+        # this on its own.
         if d < dt:
             d = dt
             warning(
@@ -242,7 +263,7 @@ class recipe(A.recipe):
                 w, d = self.make_connection(src_pop, tgt_pop)
                 res.append(A.connection((src, "source"), "synapse", w, d))
                 n += 1
-            self.connections[(src_pop, tgt_pop)] += n
+            self.connections[src_pop][tgt_pop] += n
         return res
 
     def event_generators(self, gid):
@@ -250,22 +271,24 @@ class recipe(A.recipe):
         if pop == ITH:
             return []
         else:
+            # Model the background
+            f = self.f_background*self.k_background[pop]
             return [
                 A.event_generator(
                     "synapse",
                     self.weight_background,
-                    A.poisson_schedule(tstart=0.0, freq=self.f_thalamic),
+                    A.poisson_schedule(tstart=0.0, freq=f),
                 )
             ]
 
 
 rec = recipe(
-    l23=(20683, 5834),
+    l23=(20683, 5834), # exc, inh
     l4=(21915, 5479),
     l5=(4850, 1065),
     l6=(14395, 2948),
     nth=902,
-    scale=0.1,
+    scale=0.01,
 )
 
 ctx = A.context(threads=8)
@@ -274,66 +297,40 @@ sim.record(A.spike_recording.all)
 sim.progress_banner()
 sim.set_binning_policy(A.binning.regular, dt)
 
-# Setup done, print out our connection table
-
-print("-" * 80)
+banner()
 print(f"Set up the simulation, total cells N={rec.N}")
-print()
-print("Connections")
-print()
-lbls = [
-    f"{l}-{t}"
-    for l in [
-        23,
-        4,
-        5,
-        6,
-    ]
-    for t in "ei"
-] + ["th"]
-print("| " + 4 * " ", end=" | ")
-for lbl in lbls:
-    print(f"{lbl:>6}", end=" | ")
-print()
-print("+-" + 4 * "-", end="-+-")
-for lbl in lbls:
-    print("-" * 6, end="-+-")
-print()
-for lbl, src in zip(lbls, POPS):
-    print(f"| {lbl:>4}", end=" | ")
-    for tgt in POPS:
-        print(f"{rec.connections[(src, tgt)]:>6d}", end=" | ")
-    print()
-print()
-print("-" * 80)
-print()
+print("\nConnections\n")
+
+conn = pd.DataFrame(rec.connections)
+conn.index = LABELS
+conn.columns = LABELS
+conn['TOTAL'] = conn.sum(axis=1)
+# conn = pd.concat(objs=[conn, conn.sum(axis=1)])
+print(conn.sum(axis=1).T)
+
+print(conn.to_string())
+
+banner()
 print(f"Running simulation for {T}ms at dt={dt}ms")
+
 t0 = pc()
-sim.run(100, 0.05)
+sim.run(T, dt)
 t1 = pc()
 print(f"Done, took {t1 - t0:0.3f}s.")
-print()
-print("-" * 80)
-print()
-print("Spikes")
-print()
-if VERBOSE:
-    print("| Time     | GID    | LID | POP   |")
-    print("|----------+--------+-----+-------+")
-    for (gid, lid), t in sim.spikes():
-        pop = rec.gid_to_pop(gid)
-        lbl = lbls[pop]
-        print(f"| {t:8.3f} | {gid:>6d} | {lid:>3d} | {lbl:>5s} |")
-    print()
 
-count = np.zeros_like(POPS)
+banner()
+print("Spikes\n")
+
+gs, ls, ts, ps = [], [], [], []
 for (gid, lid), t in sim.spikes():
     pop = rec.gid_to_pop(gid)
-    count[pop] += 1
+    ps.append(LABELS[pop])
+    gs.append(gs)
+    ls.append(lid)
+    ts.append(t)
 
-print("| Pop   | Count    |")
-print("+-------+----------+")
-for pop in POPS:
-    print(f"| {lbls[pop]:>5} | {count[pop]:>8} |")
-print("+-------+----------+")
-print(f"| Total | {np.sum(count):>8} |")
+spikes = pd.DataFrame({"time": ts, "lid": ls, "gid": gs, "pop": ps})
+counts = pd.DataFrame(spikes.groupby('pop').count()['time'])
+counts.columns = ["count"]
+counts = pd.concat(objs=[counts, pd.DataFrame({'count': counts['count'].sum()}, index=['TOTAL'])])
+print(counts.to_string())
