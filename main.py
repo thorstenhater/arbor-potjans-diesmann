@@ -5,10 +5,11 @@ import numpy as np
 import numpy.random as rd
 import arbor as A
 from time import perf_counter as pc
+from logging import warning
 
 dt = 0.05  # ms
 T = 100  # ms
-
+VERBOSE = False
 
 def make_iaf():
     return A.lif_cell(source="source",
@@ -32,12 +33,12 @@ def make_hh():
         .set_property(Vm=-65)
         .paint(soma, A.density("hh"))
         .place(center, A.threshold_detector(-50), "source")
-        .place(center, A.synapse("expsyn", {"tau": 0.5, "e": -65}), "synapse")
+        .place(center, A.synapse("expsyn", {"tau": 0.5, "e": 0}), "synapse")
     )
     return A.cable_cell(tree, decor)
 
 
-def make_spike_source(*, tstart=0, tend=15, f=0.015):
+def make_spike_source(*, tstart=0, tend=15, f=0.15):
     return A.spike_source_cell("source", A.poisson_schedule(tstart, f, tend))
 
 
@@ -182,8 +183,8 @@ class recipe(A.recipe):
         # broken simulations if d < dt, so fix it here
         if d < dt:
             d = dt
-            print(
-                f"WARNING: Connection {src} -> {tgt} has delay less than dt={dt}, using dt instead."
+            warning(
+                f"Connection {src} -> {tgt} has delay less than dt={dt}, using dt instead."
             )
         return w, d
 
@@ -308,7 +309,24 @@ print("-" * 80)
 print()
 print("Spikes")
 print()
-print("| Time     | GID    | LID |")
-print("|----------+--------+-----+")
+if VERBOSE:
+    print("| Time     | GID    | LID | POP   |")
+    print("|----------+--------+-----+-------+")
+    for (gid, lid), t in sim.spikes():
+        pop = rec.gid_to_pop(gid)
+        lbl = lbls[pop]
+        print(f"| {t:8.3f} | {gid:>6d} | {lid:>3d} | {lbl:>5s} |")
+        count[pop] += 1
+    print()
+
+count = np.zeros_like(POPS)
 for (gid, lid), t in sim.spikes():
-    print(f"| {t:8.3f} | {gid:>6d} | {lid:>3d} |")
+    pop = rec.gid_to_pop(gid)
+    count[pop] += 1
+
+print("| Pop   | Count    |")
+print("+-------+----------+")
+for pop in POPS:
+    print(f"| {lbls[pop]:>5} | {count[pop]:>8} |")
+print("+-------+----------+")
+print(f"| Total | {np.sum(count):>8} |")
