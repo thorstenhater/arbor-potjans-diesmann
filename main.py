@@ -11,15 +11,19 @@ dt = 0.05  # ms
 T = 100  # ms
 VERBOSE = False
 
+
 def make_iaf():
-    return A.lif_cell(source="source",
-                      target="synapse",
-                      tau_m=10,
-                      t_ref=2,
-                      C_m=250,
-                      E_L=-65, # TODO
-                      V_m=-65, # TODO
-                      E_R=-65,)
+    return A.lif_cell(
+        source="source",
+        target="synapse",
+        tau_m=10,
+        t_ref=2,
+        C_m=250,
+        E_L=-65,  # TODO
+        V_m=-65,  # TODO
+        E_R=-65,
+    )
+
 
 def make_hh():
     # TODO figure out HH parameters
@@ -150,7 +154,9 @@ class recipe(A.recipe):
         self.stddev_weight_inh = 0.4 * self.mean_weight_exc
         # Background
         self.f_background = 8e-3
-        self.weight_background = 500  # TODO what is the correct input? Purely guessed...
+        self.weight_background = (
+            500  # TODO what is the correct input? Purely guessed...
+        )
         # Thalamic inputs
         self.f_thalamic = 15e-3
         self.weight_thalamic = 500  # TODO what is the correct input? Purely guessed...
@@ -262,9 +268,11 @@ rec = recipe(
     scale=0.1,
 )
 
-sim = A.simulation(rec)
+ctx = A.context(threads=8)
+sim = A.simulation(rec, ctx)
 sim.record(A.spike_recording.all)
 sim.progress_banner()
+sim.set_binning_policy(A.binning.regular, dt)
 
 # Setup done, print out our connection table
 
@@ -316,7 +324,6 @@ if VERBOSE:
         pop = rec.gid_to_pop(gid)
         lbl = lbls[pop]
         print(f"| {t:8.3f} | {gid:>6d} | {lid:>3d} | {lbl:>5s} |")
-        count[pop] += 1
     print()
 
 count = np.zeros_like(POPS)
