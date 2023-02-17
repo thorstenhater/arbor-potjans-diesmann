@@ -15,7 +15,7 @@ VERBOSE = False
 
 def banner():
     print()
-    print('-'*80)
+    print("-" * 80)
     print()
 
 
@@ -49,7 +49,7 @@ def make_hh():
     return A.cable_cell(tree, decor)
 
 
-def make_spike_source(*, tstart=0, tend=15, f=0.15): # ms, ms, kHz
+def make_spike_source(*, tstart=0, tend=15, f=0.15):  # ms, ms, kHz
     return A.spike_source_cell("source", A.poisson_schedule(tstart, f, tend))
 
 
@@ -170,10 +170,12 @@ class recipe(A.recipe):
         self.stddev_weight_exc = 0.1 * self.mean_weight_exc
         self.stddev_weight_inh = 0.4 * self.mean_weight_exc
         # Background
-        self.f_background = 8e-3 # kHz
+        self.f_background = 8e-3  # kHz
         # Indegree of background connection, used as a scale for the frequency here
         # TODO test/check if this holds water
-        self.k_background = np.array([1600, 1500, 2100, 1900, 2000, 1900, 2900, 2100, 0])
+        self.k_background = np.array(
+            [1600, 1500, 2100, 1900, 2000, 1900, 2900, 2100, 0]
+        )
         self.weight_background = (
             500  # TODO what is the correct input? Purely guessed...
         )
@@ -272,7 +274,7 @@ class recipe(A.recipe):
             return []
         else:
             # Model the background
-            f = self.f_background*self.k_background[pop]
+            f = self.f_background * self.k_background[pop]
             return [
                 A.event_generator(
                     "synapse",
@@ -283,7 +285,7 @@ class recipe(A.recipe):
 
 
 rec = recipe(
-    l23=(20683, 5834), # exc, inh
+    l23=(20683, 5834),  # exc, inh
     l4=(21915, 5479),
     l5=(4850, 1065),
     l6=(14395, 2948),
@@ -304,7 +306,7 @@ print("\nConnections\n")
 conn = pd.DataFrame(rec.connections)
 conn.index = LABELS
 conn.columns = LABELS
-conn['TOTAL'] = conn.sum(axis=1)
+conn["TOTAL"] = conn.sum(axis=1)
 # conn = pd.concat(objs=[conn, conn.sum(axis=1)])
 print(conn.sum(axis=1).T)
 
@@ -330,7 +332,9 @@ for (gid, lid), t in sim.spikes():
     ts.append(t)
 
 spikes = pd.DataFrame({"time": ts, "lid": ls, "gid": gs, "pop": ps})
-counts = pd.DataFrame(spikes.groupby('pop').count()['time'])
+counts = pd.DataFrame(spikes.groupby("pop").count()["time"])
 counts.columns = ["count"]
-counts = pd.concat(objs=[counts, pd.DataFrame({'count': counts['count'].sum()}, index=['TOTAL'])])
+counts = pd.concat(
+    objs=[counts, pd.DataFrame({"count": counts["count"].sum()}, index=["TOTAL"])]
+)
 print(counts.to_string())

@@ -10,6 +10,7 @@ from logging import warning
 import seaborn as sns
 import matplotlib.pyplot as plt
 
+
 def make_hh():
     # TODO figure out HH parameters
     # TODO figure out cell geometry
@@ -20,29 +21,24 @@ def make_hh():
     decor = (
         A.decor()
         .set_property(Vm=-65)
-        .paint(soma, A.density("hh", {'gkbar':3.6, 'gl': 0.03, 'gnabar': 12.0, 'el':-65}))
+        .paint(
+            soma, A.density("hh", {"gkbar": 3.6, "gl": 0.03, "gnabar": 12.0, "el": -65})
+        )
         .place(center, A.threshold_detector(-50), "source")
         .place(center, A.synapse("expsyn", {"tau": 0.5, "e": 0}), "synapse")
     )
     return A.cable_cell(tree, decor)
 
-def make_iaf():
-    res = A.lif_cell("source", "synapse")
-    res.tau_m=10
-    res.t_ref=2
-    res.C_m=250
-    res.E_L=-65
-    res.V_m=-65
-    res.E_R=-65
-    return res
 
 class recipe(A.recipe):
     def __init__(self):
         A.recipe.__init__(self)
-        self.f_background = 8e-3 # kHz
+        self.f_background = 8e-3  # kHz
         # Indegree of background connection, used as a scale for the frequency here
         # TODO test/check if this holds water
-        self.k_background = np.array([1600, 1500, 2100, 1900, 2000, 1900, 2900, 2100, 0])
+        self.k_background = np.array(
+            [1600, 1500, 2100, 1900, 2000, 1900, 2900, 2100, 0]
+        )
         self.weight_background = 5
         # Thalamic inputs
         self.f_thalamic = 15e-3
@@ -63,7 +59,7 @@ class recipe(A.recipe):
 
     def event_generators(self, gid):
         pop = 0
-        f = self.f_background*self.k_background[pop]
+        f = self.f_background * self.k_background[pop]
         return [
             A.event_generator(
                 "synapse",
@@ -73,7 +69,7 @@ class recipe(A.recipe):
         ]
 
     def probes(self, gid):
-        return [A.cable_probe_membrane_voltage('(location 0 0.5)')]
+        return [A.cable_probe_membrane_voltage("(location 0 0.5)")]
 
 
 dt = 0.05  # ms
@@ -84,8 +80,7 @@ sim = A.simulation(rec)
 sim.record(A.spike_recording.all)
 sim.progress_banner()
 sim.set_binning_policy(A.binning.regular, dt)
-hdl = sim.sample((0, 0), # gid, off
-                 A.regular_schedule(dt))
+hdl = sim.sample((0, 0), A.regular_schedule(dt))  # gid, off
 
 t0 = pc()
 sim.run(100, 0.05)
