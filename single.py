@@ -15,9 +15,7 @@ def make_hh():
     decor = (
         A.decor()
         .set_property(Vm=-65)
-        .paint(
-            soma, A.density("hh", {})
-        )
+        .paint(soma, A.density("hh", {}))
         .place(center, A.threshold_detector(-50), "source")
         .place(center, A.synapse("expsyn", {"tau": 0.5, "e": 0}), "synapse")
     )
@@ -28,13 +26,13 @@ class recipe(A.recipe):
     def __init__(self, scale=1e-7):
         A.recipe.__init__(self)
         # NOTE original background frequency times the indegree
-        self.f_background = 8e-3*1600  # kHz
+        self.f_background = 8e-3 * 1600  # kHz
         # NOTE We need to scale down the weight to allow the HH mechanism to recover
-        self.weight_background = 585.39*scale
+        self.weight_background = 585.39 * scale
         # NOTE original background frequency times the indegree
-        self.f_thalamic = 15e-3*902*0.0983
+        self.f_thalamic = 15e-3 * 902 * 0.0983
         # NOTE We need to scale down the weight to allow the HH mechanism to recover
-        self.weight_thalamic = 585.39*scale
+        self.weight_thalamic = 585.39 * scale
 
     def num_cells(self):
         return 1
@@ -59,22 +57,22 @@ class recipe(A.recipe):
                 "synapse",
                 self.weight_thalamic,
                 A.poisson_schedule(tstart=0.0, freq=self.f_thalamic),
-            )
+            ),
         ]
 
     def probes(self, gid):
         return [A.cable_probe_membrane_voltage("(location 0 0.5)")]
 
 
-dt = 0.05 # ms
-T = 100 # ms
+dt = 0.05  # ms
+T = 100  # ms
 
 rec = recipe()
 sim = A.simulation(rec)
 sim.record(A.spike_recording.all)
 sim.progress_banner()
 sim.set_binning_policy(A.binning.regular, dt)
-hdl = sim.sample((0, 0), A.regular_schedule(dt)) # gid, off
+hdl = sim.sample((0, 0), A.regular_schedule(dt))  # gid, off
 
 t0 = pc()
 sim.run(100, 0.05)

@@ -113,7 +113,7 @@ class recipe(A.recipe):
         l6=(0, 0),
         nth=0,
         scale=1.0,
-        w_scale=1.0
+        w_scale=1.0,
     ):
         A.recipe.__init__(self)
         # Sizes of sub-populations
@@ -199,7 +199,7 @@ class recipe(A.recipe):
     def make_connection(self, src, tgt):
         # NOTE: The mean weight of the connection from L4E to L23E is doubled
         if src == ITH:
-            w = self.weight_thalamic*self.weight_scale
+            w = self.weight_thalamic * self.weight_scale
             d = self.delay_thalamic
         elif src == I4E and tgt == I23E:
             w = rd.normal(2 * self.mean_weight_exc, self.stddev_weight_exc)
@@ -281,7 +281,7 @@ class recipe(A.recipe):
             return [
                 A.event_generator(
                     "synapse",
-                    self.weight_background*self.weight_scale,
+                    self.weight_background * self.weight_scale,
                     A.poisson_schedule(tstart=0.0, freq=f),
                 )
             ]
@@ -294,7 +294,7 @@ rec = recipe(
     l6=(14395, 2948),
     nth=902,
     scale=0.1,
-    w_scale=7.5e-7
+    w_scale=7.5e-7,
 )
 
 ctx = A.context(threads=8)
@@ -310,7 +310,9 @@ print("\nConnections\n")
 conn = pd.DataFrame(rec.connections)
 conn.columns = LABELS
 conn["TOTAL"] = conn.sum(axis=1)
-conn = pd.concat(objs=[conn, pd.DataFrame(conn.sum(axis=0)).T], ignore_index=True, axis=0)
+conn = pd.concat(
+    objs=[conn, pd.DataFrame(conn.sum(axis=0)).T], ignore_index=True, axis=0
+)
 conn.index = conn.columns
 
 print(conn.to_string())
@@ -349,8 +351,8 @@ print(counts.to_string())
 fg, ax = plt.subplots()
 
 ax.eventplot(events, colors=colors)
-ax.set_xlabel('Time $(t/ms)$')
-ax.set_ylabel('GID')
+ax.set_xlabel("Time $(t/ms)$")
+ax.set_ylabel("GID")
 ax.set_ylim(0, rec.N)
 ax.set_xlim(0, T)
 fg.savefig("main-spikes.pdf")
