@@ -35,7 +35,7 @@ def make_iaf():
     )
 
 
-def make_hh():
+def make_hh(gid):
     # TODO figure out HH parameters
     # TODO figure out cell geometry
     tree = A.segment_tree()
@@ -52,8 +52,8 @@ def make_hh():
     return A.cable_cell(tree, decor)
 
 
-def make_spike_source(*, tstart=0, tend=15, f=0.15):  # ms, ms, kHz
-    return A.spike_source_cell("source", A.poisson_schedule(tstart, f, tend))
+def make_spike_source(gid=0, *, tstart=0, tend=15, f=0.15):  # ms, ms, kHz
+    return A.spike_source_cell("source", A.poisson_schedule(tstart=tstart, freq=f, tstop=tend, seed=gid))
 
 
 make_l23e = make_hh
@@ -184,7 +184,7 @@ class recipe(A.recipe):
         self.weight_background = 585.39
         # Thalamic inputs
         self.f_thalamic = 15e-3
-        self.weight_thalamic = 585.39
+        self.weight_thalamic = 0 #585.39
         self.delay_thalamic = 1.5
         # Record synapse counts for reporting. We'd expect p_s_t*n_s*n_t on
         # average for source and target populations.
@@ -241,7 +241,7 @@ class recipe(A.recipe):
 
     def cell_description(self, gid):
         pop = self.gid_to_pop(gid)
-        return CELLS[pop]()
+        return CELLS[pop](gid)
 
     def global_properties(self, kind):
         if kind == A.cell_kind.cable:
@@ -282,7 +282,7 @@ class recipe(A.recipe):
                 A.event_generator(
                     "synapse",
                     self.weight_background * self.weight_scale,
-                    A.poisson_schedule(tstart=0.0, freq=f),
+                    A.poisson_schedule(tstart=0.0, freq=f, seed=gid),
                 )
             ]
 
@@ -294,7 +294,7 @@ rec = recipe(
     l6=(14395, 2948),
     nth=902,
     scale=0.1,
-    w_scale=7.5e-7,
+    w_scale=5e-6,
 )
 
 ctx = A.context(threads=8)

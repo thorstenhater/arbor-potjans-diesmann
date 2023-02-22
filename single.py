@@ -23,7 +23,7 @@ def make_hh():
 
 
 class recipe(A.recipe):
-    def __init__(self, scale=1e-7):
+    def __init__(self, scale=5e-7):
         A.recipe.__init__(self)
         # NOTE original background frequency times the indegree
         self.f_background = 8e-3 * 1600  # kHz
