@@ -1,13 +1,7 @@
 #!/usr/bin/env python3
 
-from collections import defaultdict
-import numpy as np
-import pandas as pd
-import numpy.random as rd
 import arbor as A
 from time import perf_counter as pc
-from logging import warning
-import seaborn as sns
 import matplotlib.pyplot as plt
 
 
@@ -22,7 +16,7 @@ def make_hh():
         A.decor()
         .set_property(Vm=-65)
         .paint(
-            soma, A.density("hh", {"gkbar": 3.6, "gl": 0.03, "gnabar": 12.0, "el": -65})
+            soma, A.density("hh", {})
         )
         .place(center, A.threshold_detector(-50), "source")
         .place(center, A.synapse("expsyn", {"tau": 0.5, "e": 0}), "synapse")
@@ -31,19 +25,16 @@ def make_hh():
 
 
 class recipe(A.recipe):
-    def __init__(self):
+    def __init__(self, scale=1e-7):
         A.recipe.__init__(self)
-        self.f_background = 8e-3  # kHz
-        # Indegree of background connection, used as a scale for the frequency here
-        # TODO test/check if this holds water
-        self.k_background = np.array(
-            [1600, 1500, 2100, 1900, 2000, 1900, 2900, 2100, 0]
-        )
-        self.weight_background = 5
-        # Thalamic inputs
-        self.f_thalamic = 15e-3
-        self.weight_thalamic = 5
-        self.delay_thalamic = 1.5
+        # NOTE original background frequency times the indegree
+        self.f_background = 8e-3*1600  # kHz
+        # NOTE We need to scale down the weight to allow the HH mechanism to recover
+        self.weight_background = 585.39*scale
+        # NOTE original background frequency times the indegree
+        self.f_thalamic = 15e-3*902*0.0983
+        # NOTE We need to scale down the weight to allow the HH mechanism to recover
+        self.weight_thalamic = 585.39*scale
 
     def num_cells(self):
         return 1
@@ -58,13 +49,16 @@ class recipe(A.recipe):
         return A.neuron_cable_properties()
 
     def event_generators(self, gid):
-        pop = 0
-        f = self.f_background * self.k_background[pop]
         return [
             A.event_generator(
                 "synapse",
                 self.weight_background,
-                A.poisson_schedule(tstart=0.0, freq=f),
+                A.poisson_schedule(tstart=0.0, freq=self.f_background),
+            ),
+            A.event_generator(
+                "synapse",
+                self.weight_thalamic,
+                A.poisson_schedule(tstart=0.0, freq=self.f_thalamic),
             )
         ]
 
@@ -72,15 +66,15 @@ class recipe(A.recipe):
         return [A.cable_probe_membrane_voltage("(location 0 0.5)")]
 
 
-dt = 0.05  # ms
-T = 100  # ms
+dt = 0.05 # ms
+T = 100 # ms
 
 rec = recipe()
 sim = A.simulation(rec)
 sim.record(A.spike_recording.all)
 sim.progress_banner()
 sim.set_binning_policy(A.binning.regular, dt)
-hdl = sim.sample((0, 0), A.regular_schedule(dt))  # gid, off
+hdl = sim.sample((0, 0), A.regular_schedule(dt)) # gid, off
 
 t0 = pc()
 sim.run(100, 0.05)
@@ -91,7 +85,6 @@ print(sim.spikes())
 fg, ax = plt.subplots()
 
 for data, meta in sim.samples(hdl):
-    print(meta)
-    print(data)
     ax.plot(data[:, 0], data[:, 1])
     fg.savefig("single.pdf")
+    fg.savefig("single.png")

@@ -7,6 +7,9 @@ import numpy.random as rd
 import arbor as A
 from time import perf_counter as pc
 from logging import warning
+import seaborn as sns
+import matplotlib.pyplot as plt
+
 
 dt = 0.05  # ms
 T = 100  # ms
@@ -110,6 +113,7 @@ class recipe(A.recipe):
         l6=(0, 0),
         nth=0,
         scale=1.0,
+        w_scale=1.0
     ):
         A.recipe.__init__(self)
         # Sizes of sub-populations
@@ -158,7 +162,8 @@ class recipe(A.recipe):
                 ],
             ]
         )
-
+        # Scale weights for HH ./. LIF
+        self.weight_scale = w_scale
         # Delays
         self.mean_delay_exc = 1.5
         self.mean_delay_inh = 0.5 * self.mean_delay_exc
@@ -176,13 +181,11 @@ class recipe(A.recipe):
         self.k_background = np.array(
             [1600, 1500, 2100, 1900, 2000, 1900, 2900, 2100, 0]
         )
-        self.weight_background = (
-            500  # TODO what is the correct input? Purely guessed...
-        )
+        self.weight_background = 585.39
         # Thalamic inputs
         self.f_thalamic = 15e-3
-        self.weight_thalamic = 500  # TODO what is the correct input? Purely guessed...
-        self.delay_thalamic = 1.5  # TODO what is the correct input? Purely guessed...
+        self.weight_thalamic = 585.39
+        self.delay_thalamic = 1.5
         # Record synapse counts for reporting. We'd expect p_s_t*n_s*n_t on
         # average for source and target populations.
         #
@@ -196,7 +199,7 @@ class recipe(A.recipe):
     def make_connection(self, src, tgt):
         # NOTE: The mean weight of the connection from L4E to L23E is doubled
         if src == ITH:
-            w = self.weight_thalamic
+            w = self.weight_thalamic*self.weight_scale
             d = self.delay_thalamic
         elif src == I4E and tgt == I23E:
             w = rd.normal(2 * self.mean_weight_exc, self.stddev_weight_exc)
@@ -278,7 +281,7 @@ class recipe(A.recipe):
             return [
                 A.event_generator(
                     "synapse",
-                    self.weight_background,
+                    self.weight_background*self.weight_scale,
                     A.poisson_schedule(tstart=0.0, freq=f),
                 )
             ]
@@ -290,7 +293,8 @@ rec = recipe(
     l5=(4850, 1065),
     l6=(14395, 2948),
     nth=902,
-    scale=0.01,
+    scale=0.1,
+    w_scale=7.5e-7
 )
 
 ctx = A.context(threads=8)
@@ -304,11 +308,10 @@ print(f"Set up the simulation, total cells N={rec.N}")
 print("\nConnections\n")
 
 conn = pd.DataFrame(rec.connections)
-conn.index = LABELS
 conn.columns = LABELS
 conn["TOTAL"] = conn.sum(axis=1)
-# conn = pd.concat(objs=[conn, conn.sum(axis=1)])
-print(conn.sum(axis=1).T)
+conn = pd.concat(objs=[conn, pd.DataFrame(conn.sum(axis=0)).T], ignore_index=True, axis=0)
+conn.index = conn.columns
 
 print(conn.to_string())
 
@@ -324,12 +327,16 @@ banner()
 print("Spikes\n")
 
 gs, ls, ts, ps = [], [], [], []
+events = [[] for _ in range(rec.N)]
 for (gid, lid), t in sim.spikes():
     pop = rec.gid_to_pop(gid)
     ps.append(LABELS[pop])
-    gs.append(gs)
+    gs.append(gid)
     ls.append(lid)
     ts.append(t)
+    events[gid].append(t)
+
+colors = [sns.color_palette()[rec.gid_to_pop(gid)] for gid in range(rec.N)]
 
 spikes = pd.DataFrame({"time": ts, "lid": ls, "gid": gs, "pop": ps})
 counts = pd.DataFrame(spikes.groupby("pop").count()["time"])
@@ -338,3 +345,13 @@ counts = pd.concat(
     objs=[counts, pd.DataFrame({"count": counts["count"].sum()}, index=["TOTAL"])]
 )
 print(counts.to_string())
+
+fg, ax = plt.subplots()
+
+ax.eventplot(events, colors=colors)
+ax.set_xlabel('Time $(t/ms)$')
+ax.set_ylabel('GID')
+ax.set_ylim(0, rec.N)
+ax.set_xlim(0, T)
+fg.savefig("main-spikes.pdf")
+fg.savefig("main-spikes.png")
