@@ -6,8 +6,6 @@ import matplotlib.pyplot as plt
 
 
 def make_hh():
-    # TODO figure out HH parameters
-    # TODO figure out cell geometry
     tree = A.segment_tree()
     tree.append(A.mnpos, A.mpoint(-3, 0, 0, 3), A.mpoint(3, 0, 0, 3), tag=1)
     center = "(location 0 0.5)"
@@ -71,7 +69,6 @@ rec = recipe()
 sim = A.simulation(rec)
 sim.record(A.spike_recording.all)
 sim.progress_banner()
-sim.set_binning_policy(A.binning.regular, dt)
 hdl = sim.sample((0, 0), A.regular_schedule(dt))  # gid, off
 
 t0 = pc()

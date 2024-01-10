@@ -69,7 +69,6 @@ rec = recipe()
 sim = A.simulation(rec)
 sim.record(A.spike_recording.all)
 sim.progress_banner()
-sim.set_binning_policy(A.binning.regular, dt)
 hdl = sim.sample((0, 0), A.regular_schedule(dt))  # gid, off
 
 t0 = pc()
