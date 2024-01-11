@@ -6,16 +6,21 @@ import pandas as pd
 import numpy.random as rd
 from scipy.stats import truncnorm
 import arbor as A
-from arbor import units as U
 from time import perf_counter as pc
 import seaborn as sns
 import matplotlib.pyplot as plt
 
+try:
+    from arbor import units as U
+except:
+    # Units shim for arbor < 0.10.0
+    class U:
+        ms = 1.0
+        mV = 1.0
+        kHz = 1.0
 
 dt = 0.05 * U.ms
 T = 100 * U.ms
-VERBOSE = False
-
 
 def banner():
     print()
@@ -109,13 +114,11 @@ LABELS = [
 ] + ["th"]
 
 
-# NOTE: We're using the truncated normal distribution here to avoid
-# negative delays
+# Helper using the truncated normal distribution to avoid negative delays
 def delay(mu, sigma, n):
     return truncnorm(
         (dt.value - mu) / sigma, (T.value - mu) / sigma, loc=mu, scale=sigma
     ).rvs(n)
-
 
 class ucircuit(A.recipe):
     def __init__(
@@ -143,29 +146,7 @@ class ucircuit(A.recipe):
         self.N = self.offset[-1]
         # Probability to connect between a target population and a source population.
         # Layout: [tgt][src]
-        self.connection_probability = np.array(
-            [
-                [0.1009, 0.1689, 0.0437, 0.0818, 0.0323, 0.0, 0.0076, 0.0, 0.0],
-                [0.1346, 0.1371, 0.0316, 0.0515, 0.0755, 0.0, 0.0042, 0.0, 0.0],
-                [0.0077, 0.0059, 0.0497, 0.135, 0.0067, 0.0003, 0.0453, 0.0, 0.0983],
-                [0.0691, 0.0029, 0.0794, 0.1597, 0.0033, 0.0, 0.1057, 0.0, 0.0619],
-                [0.1004, 0.0622, 0.0505, 0.0057, 0.0831, 0.3726, 0.0204, 0.0, 0.0],
-                [0.0548, 0.0269, 0.0257, 0.0022, 0.06, 0.3158, 0.0086, 0.0, 0.0],
-                [
-                    0.0156,
-                    0.0066,
-                    0.0211,
-                    0.0166,
-                    0.0572,
-                    0.0197,
-                    0.0396,
-                    0.2252,
-                    0.0512,
-                ],
-                [0.0364, 0.001, 0.0034, 0.0005, 0.0277, 0.008, 0.0658, 0.1443, 0.0196],
-                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-            ]
-        )
+        self.connection_probability = np.loadtxt("ucircuit/probabilities.csv", delimiter=",", dtype=float)
         # Scale weights for HH ./. LIF
         self.weight_scale = w_scale
         # Delays
@@ -283,15 +264,86 @@ class ucircuit(A.recipe):
             ]
 
 
-rec = ucircuit(
-    l23=(20683, 5834),  # exc, inh
-    l4=(21915, 5479),
-    l5=(4850, 1065),
-    l6=(14395, 2948),
-    nth=902,
-    scale=0.01,
-    w_scale=5e-6,
-)
+class parcellation(A.recipe):
+    def __init__(self, num_tiles=1, scale=1.0):
+        A.recipe.__init__(self)
+        # NOTE: For now, all ucircuits are the same, but we can remedy that
+        # by seeding the RNG with the tile number.
+        self.ucircuit = ucircuit(
+            l23=(20683, 5834),  # exc, inh
+            l4=(21915, 5479),
+            l5=(4850, 1065),
+            l6=(14395, 2948),
+            nth=902,
+            scale=scale,
+            w_scale=5e-6,
+        )
+        self.num_tiles = num_tiles
+        # Tuning parameter.
+        # NOTE: We assume here that
+        # - connection strength is the sum over all relevant weights
+        # - weights are normally distributed with some mu/sigma
+        # - approx. str = count * mu
+        self.mean_weight = 0.1
+        self.stddev_weight = 0.05
+
+        self.mean_delay = 0.75
+        self.stddev_delay = 0.1
+
+        # NOTE: Format: target column, source column?
+        self.connection_probabilities = np.loadtxt(f'parcellations/{self.num_tiles}/weights.txt', dtype=float, delimiter=',')
+        assert self.connection_probabilities.shape == (self.num_tiles, self.num_tiles)
+        self.connection_lengths = np.loadtxt(f'parcellations/{self.num_tiles}/tract_lengths.txt', dtype=float, delimiter=',')
+        assert self.connection_lengths.shape == (self.num_tiles, self.num_tiles)
+
+        self.connections = np.zeros_like(self.connection_probabilities, dtype=int)
+
+    def num_cells(self):
+        return self.ucircuit.num_cells() * self.num_tiles
+
+    def cell_kind(self, gid):
+        return self.ucircuit.cell_kind(gid % self.ucircuit.num_cells())
+
+    def cell_description(self, gid):
+        return self.ucircuit.cell_description(gid % self.ucircuit.num_cells())
+
+    def global_properties(self, kind):
+        return self.ucircuit.global_properties(kind)
+
+    def event_generators(self, gid):
+        return self.ucircuit.event_generators(gid % self.ucircuit.num_cells())
+
+    def connections_on(self, tgt):
+        # Tile-internal GID
+        loc = tgt % self.ucircuit.num_cells()
+
+        res = self.ucircuit.connections_on(loc)
+        tgt_pop = self.ucircuit.gid_to_pop(loc)
+        tgt_tile = tgt // self.ucircuit.num_cells()
+        # Inter-column connections go from L5 and L6 to L4
+        if tgt_pop == I4E or tgt_pop == I4I:
+            for src_tile in range(self.num_tiles):
+                old = len(res)
+                if src_tile == tgt_tile:
+                    continue
+                for src_pop in [I5E, I5I, I6E, I6I]:
+                    p = self.connection_probabilities[tgt_tile][src_tile]
+                    p = 0.01
+                    n_src = self.ucircuit.size[src_pop]
+                    # Generate list of connection srcs
+                    srcs = np.argwhere(rd.random(n_src) < p)
+                    ws = rd.normal(self.mean_weight, self.stddev_weight, srcs.size)
+                    ds = delay(self.mean_delay, self.stddev_delay, srcs.size)
+                    res += [
+                        A.connection((src, "source"), "synapse", w, d * U.ms)
+                        for (src, w, d) in zip(srcs, ws, ds)
+                    ]
+                new = len(res)
+                self.connections[tgt_tile, src_tile] += new - old
+        return res
+
+
+rec = parcellation(num_tiles=68, scale=0.001)
 
 ctx = A.context(threads=8)
 sim = A.simulation(rec, ctx)
@@ -299,10 +351,10 @@ sim.record(A.spike_recording.all)
 sim.progress_banner()
 
 banner()
-print(f"Set up the simulation, total cells N={rec.N}")
-print("\nConnections\n")
+print(f"Set up the simulation, total cells N={rec.num_cells()} in n={rec.num_tiles} columns.")
+print("\nuCircuit connections\n")
 
-conn = pd.DataFrame(rec.connections)
+conn = pd.DataFrame(rec.ucircuit.connections)
 conn.columns = LABELS
 conn["TOTAL"] = conn.sum(axis=1)
 conn = pd.concat(
@@ -313,7 +365,20 @@ conn.index = conn.columns
 print(conn.to_string())
 
 banner()
-print(f"Running simulation for {T}ms at dt={dt}ms")
+print("Column connections\n")
+
+print("       ", end='')
+for n in range(rec.num_tiles):
+    print(f"{n:>6d}", end=' ')
+print()
+for n in range(rec.num_tiles):
+    print(f"{n:>6d}", end=' ')
+    for m in range(rec.num_tiles):
+        print(f"{rec.connections[n, m]:>6d}", end=' ')
+    print()
+
+banner()
+print(f"Running simulation for T={T} at dt={dt}")
 
 t0 = pc()
 sim.run(T, dt)
@@ -323,24 +388,26 @@ print(f"Done, took {t1 - t0:0.3f}s.")
 banner()
 print("Spikes\n")
 
-gs, ls, ts, ps = [], [], [], []
-events = [[] for _ in range(rec.N)]
+gs, ls, ts, ps, cs = [], [], [], [], []
+events = [[] for _ in range(rec.num_cells())]
 for (gid, lid), t in sim.spikes():
-    pop = rec.gid_to_pop(gid)
+    pop = rec.ucircuit.gid_to_pop(gid % rec.ucircuit.num_cells())
     ps.append(LABELS[pop])
     gs.append(gid)
     ls.append(lid)
     ts.append(t)
+    cs.append(gid // rec.ucircuit.num_cells())
     events[gid].append(t)
 
-colors = [sns.color_palette()[rec.gid_to_pop(gid)] for gid in range(rec.N)]
+colors = [sns.color_palette()[rec.ucircuit.gid_to_pop(gid % rec.ucircuit.num_cells())]
+          for gid in range(rec.num_cells())]
 
-spikes = pd.DataFrame({"time": ts, "lid": ls, "gid": gs, "pop": ps})
-counts = pd.DataFrame(spikes.groupby("pop").count()["time"])
-counts.columns = ["count"]
-counts = pd.concat(
-    objs=[counts, pd.DataFrame({"count": counts["count"].sum()}, index=["TOTAL"])]
-)
+spikes = pd.DataFrame({"time": ts, "lid": ls, "gid": gs, "pop": ps, "col": cs})
+counts = spikes.groupby(["pop", "col"]).count().time.unstack(1)
+totals = counts.sum(axis=0)
+counts.loc['TOTAL'] = totals.values
+totals = counts.sum(axis=1)
+counts.loc[:, 'TOTAL'] = totals.values
 print(counts.to_string())
 
 fg, ax = plt.subplots()
@@ -348,7 +415,7 @@ fg, ax = plt.subplots()
 ax.eventplot(events, colors=colors)
 ax.set_xlabel("Time $(t/ms)$")
 ax.set_ylabel("GID")
-ax.set_ylim(0, rec.N)
+ax.set_ylim(0, rec.ucircuit.N)
 ax.set_xlim(0, T.value)
 fg.savefig("main-spikes.pdf")
 fg.savefig("main-spikes.png")
